@@ -82,24 +82,24 @@ def   listThings() {
 private device(it)
 {
    def event_list = it.events()
-   def device_event = [Date: it.isoDate, EventId: it.id, DeviceId: it.deviceId, 
-                       displayName: it.displayName, description: it.description, 
-                       descriptionText: it.descriptionText]    
    def results = []
+   def idx = 0
    
    try {
        for ( evt in event_list )
-       {
-           device_event.isoDate = evt.isoDate
-           device_event.id = evt.id
-           device_event.deviceId = evt.deviceId
-           device_event.displayName = evt.displayName
-           device_event.descriptionText = evt.descriptionText
-           device_event.description = evt.description
-           results += device_event
+       {    
+           def evt_map = [ : ]
+           evt_map.date = evt.isoDate
+           evt_map.id = evt.id
+           evt_map.deviceId = evt.deviceId
+           evt_map.displayName = evt.displayName
+           evt_map.descriptionText = evt.descriptionText
+           evt_map.description = evt.description
+            
+           results[idx++] = evt_map
        }
    } catch (e) {
-       log.debug "<event History> device Exception: $e"
+       log.debug "<TEST> device Exception: $e"
    }
    
    results
