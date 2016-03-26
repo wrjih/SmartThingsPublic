@@ -57,28 +57,23 @@ def initialize() {
 
 private device(it)
 {
-   def event_list = it.events()
+   def event_list = it.events( max:2 )
    def results = []
-   def idx = 0
    
    try {
        for ( evt in event_list )
        {    
-           def evt_map = [ : ]
-           evt_map.date = evt.isoDate
-           evt_map.id = evt.id
-           evt_map.deviceId = evt.deviceId
-           evt_map.displayName = evt.displayName
-           evt_map.descriptionText = evt.descriptionText
-           evt_map.description = evt.description
+           def evt_map = [time:evt.date.getTime(), eventName:evt.name, deviceId:evt.deviceId, 
+                          displayName:evt.displayName, description:evt.description,
+                          descriptionText:evt.descriptionText]
             
-           results[idx++] = evt_map
+           results << evt_map
        }
    } catch (e) {
        log.debug "<TEST> device Exception: $e"
    }
    
-   log.debug "<TEST> $results"
+   log.info "<TEST1> ${results}"
    
    results
 }  

@@ -40,7 +40,7 @@ preferences {
             input name: "water", type: "capability.waterSensor", title: "Water Sensors", required: false, multiple: true
             input name: "smoke", type: "capability.smokeDetector", title: "Smoke Detectors", required: false, multiple: true            
        } catch (e) {
-           log.debug "<Event History> Preferences Exception: $e"
+           log.debug "<Event History> Preferences Exception: ${e}"
        }
   }
 }
@@ -54,7 +54,7 @@ mappings {
            action: [ GET: "listThings"     ]
        }
    } catch (e) {
-           log.debug "<event History> Mapping Exception: $e"
+           log.debug "<Event History> Mapping Exception: ${e}"
    }
 }
   
@@ -74,7 +74,7 @@ def   listThings() {
        smoke: smoke.collect{ device(it) } 
        ]
    } catch (e) {
-       log.debug "<event History> listThings Exception: $e"
+       log.debug "<Event History> listThings Exception: ${e}"
    }
 
 }
@@ -83,23 +83,18 @@ private device(it)
 {
    def event_list = it.events()
    def results = []
-   def idx = 0
    
    try {
        for ( evt in event_list )
        {    
-           def evt_map = [ : ]
-           evt_map.date = evt.isoDate
-           evt_map.id = evt.id
-           evt_map.deviceId = evt.deviceId
-           evt_map.displayName = evt.displayName
-           evt_map.descriptionText = evt.descriptionText
-           evt_map.description = evt.description
+           def evt_map = [time:evt.date.getTime(), eventName:evt.name, deviceId:evt.deviceId, 
+                          displayName:evt.displayName, description:evt.description,
+                          descriptionText:evt.descriptionText]
             
-           results[idx++] = evt_map
+           results << evt_map
        }
    } catch (e) {
-       log.debug "<TEST> device Exception: $e"
+       log.debug "<Event History> device Exception: ${e}"
    }
    
    results
