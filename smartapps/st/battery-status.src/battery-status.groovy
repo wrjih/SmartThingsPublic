@@ -33,33 +33,31 @@ preferences
 // Show Status page
 def pageStatus() 
 {
-   def image_map = [
+   def image_url = [
        dead:"https://cdn2.iconfinder.com/data/icons/bitsies/128/BatteryDead-512.png",
        low:"https://cdn1.iconfinder.com/data/icons/technology-media-part-2/32/battery-low-512.png",
        medium:"https://cdn1.iconfinder.com/data/icons/smallicons-controls/32/614334-buttery_medium-512.png",
        health:"https://cdn1.iconfinder.com/data/icons/devices-and-networking-3/64/battery-medium-512.png"
    ]
-   def level_name = ["dead", "low", "medium", "health"]
-   def results = ( batteries ) ?  batteryLevels() : ["No device selected!"]
+   def image_name = ["dead", "low", "medium", "health"]
+   def level_name = ( batteries ) ?
+                      ["Crashed", "0%-${lowValue}%", 
+                       "${lowValue.toInteger()+1}%-${mediumValue}%", 
+                       "${mediumValue.toInteger()+1}%-100%"]
+                      : null
         
-   dynamicPage( name:"pageStatus", title:"Battery Status", nextPage:"pageConfigure", 
-         install:true, uninstall:true )
+   dynamicPage( name:"pageStatus", title:"Battery Status", install:true, uninstall:true )
    {
-       if ( results.size() == 1 )
-       {
-           section( "Go to select devices" ) 
-           {
-               href name:"pageConfigure", title: "Please select devices", 
-                    description: "Which device with battery you want to monitor?"
-           }
-       }  else   
+       if ( batteries )
        {   
-           section( "" )
+           def results = batteryLevels()
+           for (int idx=0; idx<results.size(); idx++ )
            {
-               for (int idx=0; idx<results.size(); idx++ )
-               {
-                   if ( results[idx] )
-                   {   def image_file =  image_map[level_name[idx]]
+               if ( results[idx] )
+               {   
+                   section( "${level_name[idx]}" )
+                   {
+                       def image_file =  image_url[image_name[idx]]
                        for ( data in results[idx] )
                        {
                            paragraph image: "${image_file}", "${data[0]}"
@@ -67,29 +65,40 @@ def pageStatus()
                    }
                }
            }
+       } 
+       
+       def section_name = ( batteries ) ? "Change settings" : "No device selected!"  
+       section( "${section_name}" ) 
+       {
+           href name:"gotoConfig", title: "Tap to select devices", page:"pageConfigure", 
+                style:"page"
        }
    }
 }
 
 def pageConfigure()
 {
-   dynamicPage( name:"pageConfigure", title:"Settings", 
-         install:false, uninstall:false )
+   dynamicPage( name:"pageConfigure", title:"Device settings", 
+         install:true, uninstall:false )
    {
        section( "Devices" )
        {   input( name: "batteries", type: "capability.battery",  
                   title: "Select devices",
-                  description: "Select devices you want to monitor", 
                   multiple: true, required: true )
        }
    
        section( "Thresholds" )
-       {   input( name: "lowValue", type: "number", title: "Low battery threshold",
+       {   input( name: "lowValue", type: "number", title: "Low battery threshold (1..99)",
                   defaultValue: "20", range: "1..99", required: true )
-           input( name: "mediumValue", type: "number", title: "Medium battery threshold",
+           input( name: "mediumValue", type: "number", title: "Medium battery threshold (1..99)",
                   defaultValue: "70", range: "1..99", required: true )
        }
 
+       section( "Battery last updated date" )
+       {   input( name: "withinDays", type: "number", title: "Within (1..99) days",
+                  defaultValue: "10", range: "1..99", required: false )
+       }
+       
        section( name:"Give this SmartApp a name", mobileOnly:true ) 
        {   label title: "Assign this SmartApp a name", required: false
        }
@@ -108,24 +117,35 @@ def updated() {
 
 def initialize() 
 {
-   def results
-   
-   results = ( batteries ) ?  batteryLevels() : ["No device selected!"]
+   def results = ( batteries ) ?  batteryLevels() : ["No device selected!"]
    
    results
 }
 
 private batteryLevels()
 {
-   log.info "<BATTERY> thresholds: ${lowValue} and ${mediumValue}"   
-   // battery level thresholds
-   def low = lowValue.toInteger()
-   def medium = mediumValue.toInteger()
    // battery levels index: 0->dead, 1->0%-low%, 2->(low+1)%-medium%, 3->(medium+1)%-
    def levels = [ [], [], [], [] ]
    
-   try {
-       batteries.each   
+   // Check threshold 
+   try
+   {   if ( !lowValue.isNumber() || !mediumValue.isNumber() ||
+           lowValue.toInteger() > mediumValue.toInteger() || 
+           lowValue.toInteger() < 0 || mediumValue.toInteger() > 100 )
+       {
+           lowValue = "20"
+           mediumValue = "70"
+       } 
+   } catch ( e ) 
+   {  
+       log.debug "<BATTERY> Thresholds ${lowValue} & ${mediumValue} error: ${e}"
+   } 
+   // battery level thresholds
+   def low = lowValue.toInteger()
+   def medium = mediumValue.toInteger()
+   
+   try 
+   {   batteries.each   
        {
            def batteryValue = it.currentState( "battery" ).integerValue
            def value_str = "${batteryValue}% ${it.displayName}"
@@ -149,7 +169,7 @@ private batteryLevels()
        }
    } catch ( e ) 
    {
-       log.debug "<Battery Level> Something wrong: ${e}"
+       log.debug "<BATTERY> device battery error: ${e}"
        if ( it ) 
            levels[0] << ["${it.displayName}:${e}"] 
        else
