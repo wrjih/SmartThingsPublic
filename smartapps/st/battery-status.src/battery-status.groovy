@@ -12,6 +12,12 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ *  version: 1.0.01 2016-04-03
+ *      - if invalid input, reset to default value
+ *  version: 1.0 2016-04-02
+ *      - select batteries that want to monitor
+ *      - input low & medium level thresholds
+ *      - input the allowed latest updated days
  **/
 definition(
     name: "Battery Status",
@@ -40,10 +46,12 @@ def pageStatus()
        health:"https://cdn1.iconfinder.com/data/icons/devices-and-networking-3/64/battery-medium-512.png"
    ]
    def image_name = ["dead", "low", "medium", "health"]
+   def low = isValidThreshold() ? lowValue.toInteger() : 20
+   def medium = isValidThreshold() ? mediumValue.toInteger() : 70
+   def minus_days = isValidWithinDays() ? withinDays.toInteger() : 10
    def level_name = ( batteries ) ?
-                      ["Crashed", "0%-${lowValue}%", 
-                       "${lowValue.toInteger()+1}%-${mediumValue}%", 
-                       "${mediumValue.toInteger()+1}%-100%"]
+                      ["Failed (over ${minus_days} days without an update)", 
+                      "0%-${low}%", "${low+1}%-${medium}%", "${medium+1}%-100%"]
                       : null
         
    dynamicPage( name:"pageStatus", title:"Battery Status", install:true, uninstall:true )
@@ -79,7 +87,7 @@ def pageStatus()
 def pageConfigure()
 {
    dynamicPage( name:"pageConfigure", title:"Device settings", 
-         install:true, uninstall:false )
+         install:false, uninstall:false )
    {
        section( "Devices" )
        {   input( name: "batteries", type: "capability.battery",  
@@ -88,19 +96,20 @@ def pageConfigure()
        }
    
        section( "Thresholds" )
-       {   input( name: "lowValue", type: "number", title: "Low battery threshold (1..99)",
+       {   input( name: "lowValue", type: "number", title: "Low battery threshold [1..99]",
                   defaultValue: "20", range: "1..99", required: true )
-           input( name: "mediumValue", type: "number", title: "Medium battery threshold (1..99)",
+           input( name: "mediumValue", type: "number", title: "Medium battery threshold [1..99]",
                   defaultValue: "70", range: "1..99", required: true )
        }
 
        section( "Battery last updated date" )
-       {   input( name: "withinDays", type: "number", title: "Within (1..99) days",
-                  defaultValue: "10", range: "1..99", required: false )
+       {   input( name: "withinDays", type: "number", title: "Within [1..365] days",
+                  defaultValue: "10", range: "1..365", required: false,
+                  description: "If the battery does not update its status for a long time, it may be crashed" )
        }
        
-       section( name:"Give this SmartApp a name", mobileOnly:true ) 
-       {   label title: "Assign this SmartApp a name", required: false
+       section( "Give this SmartApp a name", mobileOnly:true ) 
+       {   label title: "Assign a name", required: false
        }
    }
 }
@@ -127,31 +136,35 @@ private batteryLevels()
    // battery levels index: 0->dead, 1->0%-low%, 2->(low+1)%-medium%, 3->(medium+1)%-
    def levels = [ [], [], [], [] ]
    
-   // Check threshold 
-   try
-   {   if ( !lowValue.isNumber() || !mediumValue.isNumber() ||
-           lowValue.toInteger() > mediumValue.toInteger() || 
-           lowValue.toInteger() < 0 || mediumValue.toInteger() > 100 )
-       {
-           lowValue = "20"
-           mediumValue = "70"
-       } 
-   } catch ( e ) 
-   {  
-       log.debug "<BATTERY> Thresholds ${lowValue} & ${mediumValue} error: ${e}"
-   } 
    // battery level thresholds
-   def low = lowValue.toInteger()
-   def medium = mediumValue.toInteger()
+   def low = isValidThreshold() ? lowValue.toInteger() : 20
+   def medium = isValidThreshold() ? mediumValue.toInteger() : 70
+   def minus_days = isValidWithinDays() ? withinDays.toInteger() : 10
    
    try 
    {   batteries.each   
-       {
-           def batteryValue = it.currentState( "battery" ).integerValue
-           def value_str = "${batteryValue}% ${it.displayName}"
+       {   // battery status
+           def batteryStatus = it.currentState( "battery" )
            
-           if ( batteryValue < 0 || batteryValue > 100 )
+           // Convert status to integer. the status may belong to State, String or null object
+           def status_str = batteryStatus
+           if ( batteryStatus && batteryStatus.hasProperty("value") )
+           {   status_str = batteryStatus.value
+           }
+           def batteryValue = ( status_str && status_str.isNumber() ) ? 
+                                status_str.toInteger() : -99
+           def value_str = "${status_str}% ${it.displayName}"
+           
+           // the status updated date should later then the 'allowed_earliest_date'
+           def allowed_earliest_date = new Date().minus( minus_days )
+           
+           // determine level for each battery
+           if ( batteryValue < 0 || batteryValue > 100 || 
+               allowed_earliest_date.after( batteryStatus.date ) )
            {
+               if ( batteryValue >= 0 && batteryValue <= 100 ) 
+               {   value_str += " (last updated ${batteryStatus.date})"
+               }
                levels[0] << [value_str]
            } else
            if ( batteryValue <= low )
@@ -170,7 +183,7 @@ private batteryLevels()
    } catch ( e ) 
    {
        log.debug "<BATTERY> device battery error: ${e}"
-       if ( it ) 
+       if ( it && it.hasProperty("displayName") ) 
            levels[0] << ["${it.displayName}:${e}"] 
        else
            levels[0] << ["${e}"]
@@ -179,4 +192,49 @@ private batteryLevels()
    log.info "<BATTERY> ${levels}"
    
    levels 
+}
+
+/*
+private validInput()
+{
+   def (low, medium, minus_days) = [ 20, 70, 10 ]
+   if ( lowValue.isNumber() && mediumValue.isNumber() && 
+       lowValue.toInteger() >= 1 && lowValue.toInteger() <= 99 &&
+       mediumValue.toInteger() >= 1 && mediumValue.toInteger() <= 99 &&
+       lowValue.toInteger() < mediumValue.toInteger() ) 
+   {   (low, medium) = [ lowValue.toInteger(), mediumValue.toInteger() ]
+   }
+   
+   if ( withinDays.isNumber() &&
+       withinDays.toInteger() >= 1 && withinDays.toInteger() <= 365 )
+   {   minus_days = withinDays.toInteger()
+   }
+   
+   return [low, medium, minus_days]
+}
+*/
+
+private isValidThreshold()
+{
+   def isValid = true
+   
+   if ( !lowValue.isNumber() || !mediumValue.isNumber() || 
+       lowValue.toInteger() < 1 || lowValue.toInteger() > 99 ||
+       mediumValue.toInteger() < 1 || mediumValue.toInteger() > 99 ||
+       lowValue.toInteger() >= mediumValue.toInteger() ) 
+   {   isValid = false
+   } 
+   
+   return isValid
+}
+
+private isValidWithinDays()
+{
+   def isValid = true
+   if ( !withinDays.isNumber() ||
+       withinDays.toInteger() < 1 || withinDays.toInteger() > 365 )
+   {   isValid = false
+   } 
+      
+   return isValid
 }
