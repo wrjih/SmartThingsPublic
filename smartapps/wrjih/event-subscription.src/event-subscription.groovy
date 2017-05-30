@@ -221,12 +221,13 @@ def handleNumberEvent( evt )
 
 private sendValue(evt, Closure convert) 
 {
-   def loc = URLEncoder.encode( location.getName() )
+   def loc = URLEncoder.encode( location.name )
+   def tz = URLEncoder.encode( location.timeZone.getID() )
    def keyId = URLEncoder.encode( evt.displayName.trim() + " " + evt.name )
    def value = URLEncoder.encode( convert(evt.value) )
    def exec = "exec"  
 
-   def url = "https://script.google.com/macros/s/${urlKey}/${exec}?location=${loc}&${keyId}=${value}"
+   def url = "https://script.google.com/macros/s/${urlKey}/${exec}?location=${loc}&timezone=${tz}&${keyId}=${value}"
    log.debug( "Logging Events to GoogleSheets: ${url}" )
     
    def putParams = [ uri: url ]
